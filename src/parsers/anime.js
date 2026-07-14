@@ -198,7 +198,12 @@ function parseBackground($) {
   const parent = $('p[itemprop="description"]').first().parent();
   if (!parent.length) return null;
   const clone = parent.clone();
+  clone.find('p[itemprop="description"], h2, div, table').remove(); // блоки (синопсис, заголовки)
   clone.find('br').replaceWith(BR);
+  // inline-теги (<i>Название</i> и т.п.) разворачиваем в текст, не теряя содержимое
+  clone.find('i, em, b, strong, a, span, sup, small').each((_, el) => {
+    $(el).replaceWith($(el).text());
+  });
   clone.children().remove();
   const text = joinBr(clone.text());
   if (!text || /No background information has been added/i.test(text)) return null;
@@ -244,9 +249,13 @@ function parseRelations($) {
 function parseThemeSongs($, kind) {
   const rows = $(`div.theme-songs.js-theme-songs.${kind} table tr`);
   const out = [];
+  const PLATFORM_RE = /^(?:(?:Spotify|Apple Music|Amazon Music|Youtube Music|YouTube Music)\s*)+$/i;
   rows.each((_, tr) => {
-    const text = clean($(tr).text());
+    const $tr = $(tr).clone();
+    $tr.find('.js-theme-song-buttons, button, input').remove(); // кнопки стримингов
+    const text = clean($tr.text());
     if (!text || /No (opening|ending) themes have been added/i.test(text)) return;
+    if (PLATFORM_RE.test(text)) return; // строка целиком из названий платформ
     out.push(text);
   });
   return out;

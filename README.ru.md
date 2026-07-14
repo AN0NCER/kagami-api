@@ -29,6 +29,8 @@ npm start          # http://localhost:3000
 
 ## Эндпоинты
 
+> **Важно:** это не полный порт REST API Jikan v4. Реализованы только эндпоинты, которые нужны проекту [Tunime](https://an0ncer.github.io/). Архитектура позволяет легко добавлять новые — см. раздел [Как добавить эндпоинт](#как-добавить-эндпоинт).
+
 | Эндпоинт | TTL кэша |
 | --- | --- |
 | `GET /v4/anime?q=...` — поиск (q, page, limit, type, status, rating, score, genres, genres_exclude, producers, start_date, end_date, order_by, sort, sfw, letter) | 1 день |

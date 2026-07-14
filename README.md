@@ -29,6 +29,8 @@ Requires Node.js 18+ (with Node 22.5+ the built-in `node:sqlite` is used; older 
 
 ## Endpoints
 
+> **Note:** this is not a full port of the Jikan v4 REST API. Only the endpoints used by the [Tunime](https://an0ncer.github.io/) project are implemented. The architecture makes adding more endpoints easy — see [Adding endpoints](#adding-endpoints).
+
 | Endpoint | Cache TTL |
 | --- | --- |
 | `GET /v4/anime?q=...` — search (q, page, limit, type, status, rating, score, genres, genres_exclude, producers, start_date, end_date, order_by, sort, sfw, letter) | 1 day |
