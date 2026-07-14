@@ -18,7 +18,9 @@ function parseAnimePictures(html) {
       url = parseImageQuality(imageSrc($a.find('img').first()));
     }
     if (!url) return;
-    url = url.split('?')[0];
+    // Ссылки галереи часто ведут на большую версию (…123l.jpg) —
+    // срезаем суффикс l/t до базового имени, иначе получим …ll.jpg (404)
+    url = url.split('?')[0].replace(/(\d)[lt]\.(jpe?g|png|webp)$/i, '$1.$2');
     if (seen.has(url)) return;
     seen.add(url);
 

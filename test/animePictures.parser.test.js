@@ -3,7 +3,7 @@ const { parseAnimePictures } = require('../src/parsers/animePictures');
 
 const html = `
 <div id="content">
-  <div class="picSurround"><a class="js-picture-gallery" rel="gallery" href="https://cdn.myanimelist.net/images/anime/1522/128039.jpg"><img src="https://cdn.myanimelist.net/images/anime/1522/128039.jpg"></a></div>
+  <div class="picSurround"><a class="js-picture-gallery" rel="gallery" href="https://cdn.myanimelist.net/images/anime/1522/128039l.jpg"><img src="https://cdn.myanimelist.net/images/anime/1522/128039.jpg"></a></div>
   <div class="picSurround"><a class="js-picture-gallery" rel="gallery" href="https://cdn.myanimelist.net/images/anime/11/79410.jpg"><img src="https://cdn.myanimelist.net/images/anime/11/79410.jpg"></a></div>
   <div class="picSurround"><a class="js-picture-gallery" rel="gallery" href="https://cdn.myanimelist.net/images/anime/11/79410.jpg"><img src="https://cdn.myanimelist.net/images/anime/11/79410.jpg"></a></div>
 </div>`;
