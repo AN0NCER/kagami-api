@@ -35,6 +35,7 @@ Requires Node.js 18+ (with Node 22.5+ the built-in `node:sqlite` is used; older 
 | --- | --- |
 | `GET /v4/anime?q=...` — search (q, page, limit, type, status, rating, score, genres, genres_exclude, producers, start_date, end_date, order_by, sort, sfw, letter) | 1 day |
 | `GET /v4/anime/{id}/full` | 7 days |
+| `GET /v4/anime/{id}/pictures` | 7 days |
 | `GET /v4/anime/{id}/characters` | 7 days |
 | `GET /v4/characters/{id}/full` | 7 days |
 | `GET /v4/characters/{id}/pictures` | 7 days |

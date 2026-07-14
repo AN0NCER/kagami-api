@@ -35,6 +35,7 @@ npm start          # http://localhost:3000
 | --- | --- |
 | `GET /v4/anime?q=...` — поиск (q, page, limit, type, status, rating, score, genres, genres_exclude, producers, start_date, end_date, order_by, sort, sfw, letter) | 1 день |
 | `GET /v4/anime/{id}/full` | 7 дней |
+| `GET /v4/anime/{id}/pictures` | 7 дней |
 | `GET /v4/anime/{id}/characters` | 7 дней |
 | `GET /v4/characters/{id}/full` | 7 дней |
 | `GET /v4/characters/{id}/pictures` | 7 дней |

@@ -66,6 +66,7 @@ app.get('/', (req, res) => {
     endpoints: [
       '/v4/anime?q=...',
       '/v4/anime/{id}/full',
+      '/v4/anime/{id}/pictures',
       '/v4/anime/{id}/characters',
       '/v4/characters/{id}/full',
       '/v4/characters/{id}/pictures',

@@ -2,6 +2,7 @@ const { cached } = require('../cache');
 const { fetchPage } = require('../mal/client');
 const { parseAnimeFull } = require('../parsers/anime');
 const { parseAnimeCharacters } = require('../parsers/animeCharacters');
+const { parseAnimePictures } = require('../parsers/animePictures');
 const { ApiError } = require('../errors');
 
 function validId(raw) {
@@ -23,6 +24,20 @@ module.exports = function register(v4) {
       const { data, cache } = await cached(`anime/${id}/full`, async () => {
         const html = await fetchPage(`/anime/${id}`);
         return parseAnimeFull(html);
+      });
+      res.set('X-Cache', cache);
+      res.json({ data });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  v4.get('/anime/:id/pictures', async (req, res, next) => {
+    try {
+      const id = validId(req.params.id);
+      const { data, cache } = await cached(`anime/${id}/pictures`, async () => {
+        const html = await fetchPage(`/anime/${id}/_/pics`);
+        return parseAnimePictures(html);
       });
       res.set('X-Cache', cache);
       res.json({ data });
