@@ -1,0 +1,1118 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex">
+    <title>Tunime API</title>
+    <style>
+        :root {
+            --bg: #0c0f15;
+            --bg-2: #151a24;
+            --text: #e8eaed;
+            --muted: #8b93a1;
+            --ok: #22C55E;
+        }
+
+        * { box-sizing: border-box; }
+
+        html, body { height: 100%; }
+
+        body {
+            margin: 0;
+            display: grid;
+            place-items: center;
+            padding: 16px;
+            background:
+                radial-gradient(70% 60% at 50% 42%, rgba(95, 190, 243, .07), transparent 70%),
+                radial-gradient(120% 100% at 50% 40%, var(--bg-2), var(--bg));
+            color: var(--text);
+            font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        }
+
+        main { width: min(920px, 100%); text-align: center; }
+
+        .scene { position: relative; width: 100%; aspect-ratio: 800 / 430; }
+        canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+        h1 { margin: 6px 0 4px; font-size: 22px; font-weight: 700; letter-spacing: .02em; }
+        p { margin: 0 auto; max-width: 520px; color: var(--muted); }
+
+        .pill {
+            display: inline-flex; align-items: center; gap: 8px; margin-top: 14px;
+            padding: 6px 12px; border-radius: 999px; background: rgba(34, 197, 94, .1);
+            color: var(--ok); font-size: 13px; font-weight: 600;
+        }
+        .pill::before {
+            content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor;
+            box-shadow: 0 0 10px currentColor;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        .actions { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 12px; margin-top: 16px; }
+        .actions .pill { margin-top: 0; }
+
+        .site {
+            display: inline-flex; align-items: center; gap: 8px;
+            padding: 9px 16px; border-radius: 999px;
+            background: linear-gradient(180deg, #2296f0 0%, #287bf1 100%);
+            box-shadow: inset 0 2px 4px rgba(255, 255, 255, .35), 0 6px 18px rgba(40, 123, 241, .3);
+            color: #fff; font-size: 14px; font-weight: 600; text-decoration: none;
+            transition: transform .15s ease, box-shadow .15s ease;
+        }
+        .site:hover { transform: translateY(-1px); box-shadow: inset 0 2px 4px rgba(255, 255, 255, .35), 0 10px 24px rgba(40, 123, 241, .4); }
+        .site:active { transform: translateY(0); }
+        .site:focus-visible { outline: 2px solid #5fbef3; outline-offset: 3px; }
+        .site svg { width: 14px; height: 14px; }
+
+        @keyframes pulse { 50% { opacity: .35; } }
+
+        @media (prefers-reduced-motion: reduce) {
+            .pill::before { animation: none; }
+        }
+    </style>
+</head>
+
+<body>
+    <main>
+        <div class="scene">
+            <canvas id="scene" role="img" aria-label="Чёрный котик за ноутбуком между сервером API и телефоном: над ним из сервера в телефон летят карточки аниме, котик провожает их взглядом"></canvas>
+        </div>
+        <h1>Tunime API</h1>
+        <p>Котик разбирает данные и собирает из них аниме для Tunime. Смотреть здесь нечего — аниме ждёт в приложении.</p>
+        <div class="actions">
+            <a class="site" href="https://an0ncer.github.io">
+                Открыть Tunime
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M5 11 11 5M6 5h5v5" />
+                </svg>
+            </a>
+            <span class="pill">api работает</span>
+        </div>
+    </main>
+
+    <script>
+        (() => {
+            /**
+             * v2: котик за ноутбуком. Из сервера по плёнке идут сырые кадры,
+             * котик работает за экраном, а из сервера над ним летят карточки
+             * аниме (серия, оценка, качество) и попадают на телефон с Tunime.
+             *
+             * Сцена — в координатах 800×430, «дрожание» контуров (line boil)
+             * 12 раз в секунду, движение — плавно, 60 к/с.
+             */
+            const W = 800, H = 430;
+            const BOIL_FPS = 12;
+
+            const C = {
+                chalk: '#d9e1ee',
+                rack: '#161b25',
+                unit: '#10141c',
+                cable: '#252e3c',
+                film: '#1a202c',
+                cat: '#050507',
+                eye: '#c6f36b',
+                data: '#5fbef3',
+                data2: '#2ECC8A',
+                req: '#F5C842',
+                ledG: '#2ECC8A',
+                ledB: '#5fbef3',
+                ledY: '#F5C842'
+            };
+
+            /** Цвета «аниме»: кадры на плёнке и обложки карточек */
+            const PAL = ['#ff7aa8', '#9d7bff', '#5fbef3', '#2ECC8A', '#F5C842', '#ff9a5c'];
+
+            const canvas = document.getElementById('scene');
+            const ctx = canvas.getContext('2d');
+            const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+            // ─── Шум ────────────────────────────────────────────────────
+
+            /** Детерминированный шум 0..1: одинаковый в пределах кадра «дрожания» */
+            const hash = (n) => {
+                const x = Math.sin(n * 127.1 + 311.7) * 43758.5453;
+                return x - Math.floor(x);
+            };
+
+            /** -1..1 */
+            const jit = (n) => hash(n) * 2 - 1;
+
+            const mod = (a, n) => ((a % n) + n) % n;
+
+            let boil = 0;
+
+            // ─── Геометрия ──────────────────────────────────────────────
+
+            const cubic = (p0, p1, p2, p3, t) => {
+                const u = 1 - t;
+                return [
+                    u * u * u * p0[0] + 3 * u * u * t * p1[0] + 3 * u * t * t * p2[0] + t * t * t * p3[0],
+                    u * u * u * p0[1] + 3 * u * u * t * p1[1] + 3 * u * t * t * p2[1] + t * t * t * p3[1]
+                ];
+            };
+
+            const sampleCubic = (p0, p1, p2, p3, n, out = []) => {
+                for (let i = out.length ? 1 : 0; i <= n; i++) out.push(cubic(p0, p1, p2, p3, i / n));
+                return out;
+            };
+
+            const sampleLine = (a, b, n, out = []) => {
+                for (let i = out.length ? 1 : 0; i <= n; i++) {
+                    out.push([a[0] + (b[0] - a[0]) * i / n, a[1] + (b[1] - a[1]) * i / n]);
+                }
+                return out;
+            };
+
+            const sampleEllipse = (cx, cy, rx, ry, n, a0 = 0, a1 = Math.PI * 2) => {
+                const out = [];
+                for (let i = 0; i <= n; i++) {
+                    const a = a0 + (a1 - a0) * i / n;
+                    out.push([cx + Math.cos(a) * rx, cy + Math.sin(a) * ry]);
+                }
+                return out;
+            };
+
+            const roundRectPts = (x, y, w, h, r, n = 6) => {
+                const out = [];
+                const arc = (cx, cy, a0) => {
+                    for (let i = 0; i <= n; i++) {
+                        const a = a0 + (Math.PI / 2) * i / n;
+                        out.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r]);
+                    }
+                };
+                arc(x + w - r, y + r, -Math.PI / 2);
+                arc(x + w - r, y + h - r, 0);
+                arc(x + r, y + h - r, Math.PI / 2);
+                arc(x + r, y + r, Math.PI);
+                out.push(out[0]);
+                return out;
+            };
+
+            /** Линия, сдвинутая на d по нормали — края плёнки и ряды перфорации */
+            const offset = (pts, d) => pts.map((p, i) => {
+                const a = pts[Math.max(i - 1, 0)], b = pts[Math.min(i + 1, pts.length - 1)];
+                const dx = b[0] - a[0], dy = b[1] - a[1];
+                const l = Math.hypot(dx, dy) || 1;
+                return [p[0] - dy / l * d, p[1] + dx / l * d];
+            });
+
+            /** Ломаная с накопленной длиной — для движения с постоянной скоростью */
+            const measure = (pts) => {
+                const len = [0];
+                for (let i = 1; i < pts.length; i++) {
+                    len.push(len[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+                }
+                return { pts, len, total: len[len.length - 1] };
+            };
+
+            const pointAt = ({ pts, len, total }, u) => {
+                const d = Math.min(Math.max(u, 0), 1) * total;
+                let i = 1;
+                while (i < len.length - 1 && len[i] < d) i++;
+                const k = (d - len[i - 1]) / ((len[i] - len[i - 1]) || 1);
+                return [pts[i - 1][0] + (pts[i][0] - pts[i - 1][0]) * k, pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * k];
+            };
+
+            const angleAt = (path, u) => {
+                const a = pointAt(path, u - .004), b = pointAt(path, u + .004);
+                return Math.atan2(b[1] - a[1], b[0] - a[0]);
+            };
+
+            const easeInOut = (x) => x < .5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2;
+
+            /** Плавная кривая 0..1..0 */
+            const pulse = (t, at, width) => Math.max(0, 1 - Math.abs(t - at) / width);
+
+            // ─── Рисование «от руки» ────────────────────────────────────
+
+            /** Общая прозрачность для всех штрихов — карточки растворяются целиком */
+            let baseAlpha = 1;
+
+            /**
+             * Дрожащая линия: точки смещаются шумом текущего кадра boil и
+             * соединяются через середины отрезков — изгибы мягкие, без углов
+             */
+            function trace(pts, amp, seed) {
+                const p = pts.map(([x, y], i) => [
+                    x + jit(seed + i * 3.17 + boil * 19.3) * amp,
+                    y + jit(seed + i * 5.71 + boil * 23.9) * amp
+                ]);
+
+                ctx.moveTo(p[0][0], p[0][1]);
+                for (let i = 1; i < p.length - 1; i++) {
+                    const mx = (p[i][0] + p[i + 1][0]) / 2, my = (p[i][1] + p[i + 1][1]) / 2;
+                    ctx.quadraticCurveTo(p[i][0], p[i][1], mx, my);
+                }
+                const last = p[p.length - 1];
+                ctx.lineTo(last[0], last[1]);
+            }
+
+            /** Штрих в два прохода с разным шумом — как карандаш, обведённый дважды */
+            function sketch(pts, { color = C.chalk, width = 1.4, alpha = .5, amp = .9, seed = 1, passes = 2 } = {}) {
+                ctx.save();
+                ctx.strokeStyle = color;
+                ctx.lineWidth = width;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                for (let k = 0; k < passes; k++) {
+                    ctx.globalAlpha = alpha * (k ? .55 : 1) * baseAlpha;
+                    ctx.beginPath();
+                    trace(pts, amp * (k ? 1.4 : 1), seed + k * 1000);
+                    ctx.stroke();
+                }
+                ctx.restore();
+            }
+
+            function fillShape(pts, color, amp = .6, seed = 1) {
+                ctx.save();
+                ctx.fillStyle = color;
+                ctx.globalAlpha = baseAlpha;
+                ctx.beginPath();
+                trace(pts, amp, seed);
+                ctx.closePath();
+                ctx.fill();
+                ctx.restore();
+            }
+
+            function label(text, x, y, { size = 13, color = C.chalk, alpha = .55, mono = false, spacing = 0 } = {}) {
+                ctx.save();
+                ctx.fillStyle = color;
+                ctx.globalAlpha = alpha * baseAlpha;
+                ctx.font = mono
+                    ? `600 ${size}px ui-monospace, "Cascadia Mono", Consolas, monospace`
+                    : `600 ${size}px system-ui, -apple-system, "Segoe UI", sans-serif`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                if (spacing && 'letterSpacing' in ctx) ctx.letterSpacing = `${spacing}px`;
+                ctx.fillText(text, x, y);
+                ctx.restore();
+            }
+
+            // ─── Свечение ───────────────────────────────────────────────
+
+            /** Мягкий ореол заранее, в отдельном холсте: shadowBlur на каждый кадр дорогой */
+            const glows = new Map();
+
+            function glowSprite(color) {
+                if (glows.has(color)) return glows.get(color);
+
+                const s = 128;
+                const c = document.createElement('canvas');
+                c.width = c.height = s;
+                const g = c.getContext('2d');
+                const grad = g.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
+                grad.addColorStop(0, color);
+                grad.addColorStop(.25, color + 'aa');
+                grad.addColorStop(.6, color + '22');
+                grad.addColorStop(1, color + '00');
+                g.fillStyle = grad;
+                g.fillRect(0, 0, s, s);
+
+                glows.set(color, c);
+                return c;
+            }
+
+            function glow(x, y, r, color, alpha = 1) {
+                ctx.save();
+                ctx.globalAlpha = alpha * baseAlpha;
+                ctx.globalCompositeOperation = 'lighter';
+                ctx.drawImage(glowSprite(color), x - r, y - r, r * 2, r * 2);
+                ctx.restore();
+            }
+
+            // ─── Карточки аниме: состояние ──────────────────────────────
+
+            const CARD_DUR = 4.2;
+            const CARDS = [0, 1 / 3, 2 / 3];
+            const TAGS = ['★ 8.9', 'EP 12', '1080p', 'RU озвучка', 'JP → RU', 'EP 24', '★ 9.1', '720p', 'субтитры'];
+
+            /** Выход карточек — щель на правом боку сервера API, второй юнит */
+            const CARD_OUT = [172, 207];
+            const CARD_PATH = measure(sampleCubic([CARD_OUT[0] + 6, CARD_OUT[1]], [270, 64], [560, 56], [690, 226], 48));
+
+            /** Карточка пролетает над котиком: он провожает её взглядом, глаза вспыхивают */
+            let catSense = 0;
+            /** Где сейчас карточка, на которую смотрит котик */
+            let watchX = 400;
+            /** Карточка только что вышла из сервера: щель вспыхивает */
+            let apiFlash = 0;
+            /** Карточка долетела до телефона: экран вспыхивает */
+            let phoneFlash = 0;
+            /** Какая карточка сейчас «играет» на телефоне — последняя долетевшая */
+            let nowPlaying = 0;
+
+            /** Положение карточек считается до рисования: от него зависят вспышки на котике, сервере и телефоне */
+            function cardStates(t) {
+                catSense = 0;
+                apiFlash = 0;
+                phoneFlash = 0;
+
+                let fresh = Infinity;
+                const cards = CARDS.map((off, i) => {
+                    const cycle = t / CARD_DUR + off;
+                    const raw = cycle % 1;
+                    const n = Math.floor(cycle) * CARDS.length + i;
+                    const u = raw * .12 + easeInOut(raw) * .88;
+
+                    const near = pulse(u, .48, .22);
+                    if (near > catSense) {
+                        catSense = near;
+                        watchX = pointAt(CARD_PATH, u)[0];
+                    }
+                    apiFlash = Math.max(apiFlash, pulse(raw, 0, .08), pulse(raw, 1, .03));
+                    phoneFlash = Math.max(phoneFlash, pulse(raw, 1, .1), pulse(raw, 0, .04));
+
+                    // у кого цикл только начался, тот прошлым кругом только что долетел
+                    if (raw < fresh) { fresh = raw; nowPlaying = n - CARDS.length; }
+
+                    return { raw, n, u };
+                });
+                return cards;
+            }
+
+            // ─── Сервера ────────────────────────────────────────────────
+
+            const RACK = { w: 116, h: 248, y: 112 };
+            const RACK_X = 56;
+
+            const LEDS = [C.ledG, C.ledB, C.ledY, C.ledG, C.ledB, C.ledG, C.ledY, C.ledB];
+
+            const PORT_L = RACK_X + RACK.w;
+
+            function drawRack(t) {
+                const x = RACK_X, { y, w, h } = RACK;
+                const seed = 100;
+
+                fillShape(roundRectPts(x, y, w, h, 12), C.rack, .5, seed);
+                sketch(roundRectPts(x, y, w, h, 12), { alpha: .5, width: 1.6, seed });
+
+                for (let u = 0; u < 4; u++) {
+                    const ux = x + 12, uy = y + 16 + u * 56, uw = w - 24, uh = u === 3 ? 40 : 46;
+
+                    fillShape(roundRectPts(ux, uy, uw, uh, 6, 4), C.unit, .4, seed + u * 40);
+                    sketch(roundRectPts(ux, uy, uw, uh, 6, 4), { alpha: .22, width: 1.1, seed: seed + u * 40 + 7, passes: 1 });
+
+                    // щель вентиляции
+                    const slotW = u === 3 ? 60 : 44;
+                    sketch(sampleLine([ux + 10, uy + uh / 2], [ux + 10 + slotW, uy + uh / 2], 6),
+                        { alpha: .28, width: 3, seed: seed + u * 13, passes: 1, amp: .5 });
+
+                    if (u === 3) continue;
+
+                    // индикаторы
+                    for (let l = 0; l < 2; l++) {
+                        const id = u * 2 + l;
+                        const lx = ux + uw - 22 + l * 11;
+                        const ly = uy + uh / 2;
+                        const rate = 2 + hash(id) * 5;
+                        const on = hash(id * 7.7 + Math.floor(t * rate)) > .28;
+                        const color = LEDS[id % LEDS.length];
+
+                        ctx.fillStyle = on ? color : color + '33';
+                        ctx.beginPath();
+                        ctx.arc(lx, ly, 3.6, 0, Math.PI * 2);
+                        ctx.fill();
+                        if (on) glow(lx, ly, 13, color, .55);
+                    }
+                }
+
+                // щель, из которой вылетают карточки
+                const [ox, oy] = CARD_OUT;
+                fillShape(roundRectPts(ox - 3, oy - 16, 9, 32, 3, 2), '#2a3242', .4, 5400);
+                sketch(roundRectPts(ox - 3, oy - 16, 9, 32, 3, 2), { color: apiFlash > .05 ? C.data : C.chalk, alpha: .35 + apiFlash * .5, width: 1, seed: 5410, passes: 1 });
+                if (apiFlash > 0) glow(ox + 2, oy, 30, C.data, apiFlash * .8);
+
+                label('API', x + w / 2, y - 16, { spacing: 2 });
+            }
+
+            // ─── Телефон с Tunime ───────────────────────────────────────
+
+            const PHONE = { x: 642, y: 128, w: 96, h: 196, r: 16 };
+            const SCREEN = { x: PHONE.x + 7, y: PHONE.y + 9, w: PHONE.w - 14, h: PHONE.h - 18 };
+
+            function drawPhone(t) {
+                const { x, y, w, h, r } = PHONE;
+                const S = SCREEN;
+                const color = cardColor(nowPlaying);
+                const sway = Math.sin(t * .8) * .025;
+
+                ctx.save();
+                // подставка и лёгкое покачивание вокруг её опоры
+                ctx.translate(x + w / 2, 362);
+                ctx.rotate(sway);
+                ctx.translate(-(x + w / 2), -362);
+
+                const stand = [[x + w / 2 - 30, 362], [x + w / 2 - 14, y + h - 10], [x + w / 2 + 14, y + h - 10], [x + w / 2 + 30, 362]];
+                fillShape(stand, '#1b2130', .4, 9000);
+                sketch(stand, { alpha: .4, width: 1.3, amp: .6, seed: 9000, passes: 1 });
+
+                // корпус
+                fillShape(roundRectPts(x, y, w, h, r, 5), '#121722', .5, 9100);
+                sketch(roundRectPts(x, y, w, h, r, 5), { alpha: .55, width: 1.7, seed: 9100 });
+
+                // экран: свечение от плеера
+                glow(x + w / 2, y + h * .42, 90, color, .16 + phoneFlash * .25);
+
+                ctx.save();
+                ctx.beginPath();
+                ctx.roundRect ? ctx.roundRect(S.x, S.y, S.w, S.h, 10) : ctx.rect(S.x, S.y, S.w, S.h);
+                ctx.clip();
+
+                ctx.fillStyle = '#0a0d13';
+                ctx.fillRect(S.x, S.y, S.w, S.h);
+
+                // кадр «плеера»: обложка последней долетевшей карточки
+                const vy = S.y + 22, vh = 56;
+                const g = ctx.createLinearGradient(0, vy, 0, vy + vh);
+                g.addColorStop(0, color);
+                g.addColorStop(1, color + '44');
+                ctx.fillStyle = g;
+                ctx.fillRect(S.x, vy, S.w, vh);
+
+                ctx.fillStyle = '#0b0e14cc';
+                ctx.beginPath();
+                ctx.moveTo(S.x, vy + vh);
+                ctx.lineTo(S.x, vy + vh - 20);
+                ctx.lineTo(S.x + 22, vy + vh - 38);
+                ctx.lineTo(S.x + 40, vy + vh - 22);
+                ctx.lineTo(S.x + 58, vy + vh - 42);
+                ctx.lineTo(S.x + S.w, vy + vh - 18);
+                ctx.lineTo(S.x + S.w, vy + vh);
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.fillStyle = '#ffffffcc';
+                ctx.beginPath();
+                ctx.arc(S.x + 18 + hash(nowPlaying) * 40, vy + 16, 5, 0, Math.PI * 2);
+                ctx.fill();
+
+                // вспышка, когда карточка «вошла» в экран
+                if (phoneFlash > 0) {
+                    ctx.fillStyle = '#ffffff';
+                    ctx.globalAlpha = phoneFlash * .35;
+                    ctx.fillRect(S.x, S.y, S.w, S.h);
+                    ctx.globalAlpha = 1;
+                }
+                ctx.restore();
+
+                // ▶ поверх кадра
+                ctx.fillStyle = '#ffffff';
+                ctx.globalAlpha = .9;
+                ctx.beginPath();
+                ctx.moveTo(S.x + S.w / 2 - 6, vy + vh / 2 - 8);
+                ctx.lineTo(S.x + S.w / 2 + 8, vy + vh / 2);
+                ctx.lineTo(S.x + S.w / 2 - 6, vy + vh / 2 + 8);
+                ctx.closePath();
+                ctx.fill();
+                ctx.globalAlpha = 1;
+
+                // полоса просмотра
+                const progress = (t / CARD_DUR * CARDS.length) % 1;
+                const by = vy + vh + 10;
+                ctx.fillStyle = '#ffffff22';
+                ctx.fillRect(S.x + 8, by, S.w - 16, 3);
+                ctx.fillStyle = color;
+                ctx.fillRect(S.x + 8, by, (S.w - 16) * progress, 3);
+                glow(S.x + 8 + (S.w - 16) * progress, by + 1.5, 7, color, .8);
+
+                // название и описание серии
+                label(TAGS[mod(nowPlaying, TAGS.length)], S.x + S.w / 2, by + 18, { size: 10, color, alpha: .9 });
+                sketch(sampleLine([S.x + 10, by + 34], [S.x + S.w - 14, by + 34], 4), { alpha: .35, width: 2.2, amp: .3, seed: 9200, passes: 1 });
+                sketch(sampleLine([S.x + 10, by + 43], [S.x + S.w - 30, by + 43], 4), { alpha: .22, width: 2.2, amp: .3, seed: 9210, passes: 1 });
+
+                // список серий
+                for (let i = 0; i < 2; i++) {
+                    const ry = by + 50 + i * 18;
+                    fillShape(roundRectPts(S.x + 8, ry, 22, 14, 3, 2), cardColor(nowPlaying - 1 - i) + '99', .3, 9300 + i);
+                    sketch(sampleLine([S.x + 36, ry + 7], [S.x + S.w - 12 - i * 10, ry + 7], 3), { alpha: .25, width: 2, amp: .3, seed: 9310 + i, passes: 1 });
+                }
+
+                // вырез камеры
+                fillShape(roundRectPts(x + w / 2 - 14, y + 12, 28, 7, 3.5, 3), '#05070a', .3, 9400);
+
+                // контур экрана
+                sketch(roundRectPts(S.x, S.y, S.w, S.h, 10, 4), { alpha: .25, width: 1, amp: .5, seed: 9500, passes: 1 });
+
+                ctx.restore();
+
+                label('TUNIME', x + w / 2, y - 16, { spacing: 2 });
+            }
+
+            // ─── Запросы по воздуху: телефон → антенна API ──────────────
+
+            const ANTENNA = { x: RACK_X + RACK.w - 22, base: RACK.y, tip: RACK.y - 34 };
+            const PHONE_TX = [PHONE.x - 4, PHONE.y + 34];
+
+            function airPath(t) {
+                const s = Math.sin(t * .8) * 4;
+                return measure(sampleCubic(PHONE_TX, [560, 30 + s], [260, 30 - s], [ANTENNA.x, ANTENNA.tip], 48));
+            }
+
+            function drawAntenna(t) {
+                const { x, base, tip } = ANTENNA;
+                sketch(sampleLine([x, base], [x, tip], 6), { alpha: .5, width: 2, amp: .5, seed: 2400 });
+                fillShape(sampleEllipse(x, tip, 4, 4, 10), '#2a3242', .3, 2410);
+                sketch(sampleEllipse(x, tip, 4, 4, 10), { alpha: .45, width: 1.1, amp: .3, seed: 2420, passes: 1 });
+
+                // круги приёма расходятся от антенны и от телефона
+                for (const [cx, cy, seed, a0, a1] of [[x, tip, 2430, 1.2, 1.8], [PHONE_TX[0] + 6, PHONE_TX[1], 2460, .72, 1.28]]) {
+                    for (let k = 0; k < 2; k++) {
+                        const p = (t * .7 + k * .5) % 1;
+                        sketch(sampleEllipse(cx, cy, 8 + p * 22, 8 + p * 22, 14, Math.PI * a0, Math.PI * a1),
+                            { color: C.req, alpha: (1 - p) * .45, width: 1.2, amp: .4, seed: seed + k, passes: 1 });
+                    }
+                }
+            }
+
+            function drawRequests(t) {
+                const path = airPath(t);
+
+                // пунктир маршрута — едва заметный
+                ctx.save();
+                ctx.strokeStyle = C.req;
+                ctx.globalAlpha = .18;
+                ctx.lineWidth = 1.4;
+                ctx.lineCap = 'round';
+                ctx.setLineDash([1, 12]);
+                ctx.lineDashOffset = t * 30;
+                ctx.beginPath();
+                ctx.moveTo(path.pts[0][0], path.pts[0][1]);
+                for (const p of path.pts) ctx.lineTo(p[0], p[1]);
+                ctx.stroke();
+                ctx.restore();
+
+                // запросы «дай серию» — от телефона к API
+                for (const off of [0, .5]) {
+                    const raw = (t / 4.4 + off) % 1;
+                    const u = raw * .15 + easeInOut(raw) * .85;
+                    const fade = Math.min(raw / .08, 1, (1 - raw) / .08);
+                    for (let k = 5; k >= 1; k--) {
+                        const [x, y] = pointAt(path, u - k * .009);
+                        ctx.globalAlpha = (1 - k / 6) * .5 * fade;
+                        ctx.fillStyle = C.req;
+                        ctx.beginPath();
+                        ctx.arc(x, y, 3.4 * (1 - k / 8), 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                    ctx.globalAlpha = 1;
+                    const [x, y] = pointAt(path, u);
+                    glow(x, y, 17, C.req, .9 * fade);
+                    ctx.globalAlpha = fade;
+                    ctx.fillStyle = '#ffffff';
+                    ctx.beginPath();
+                    ctx.arc(x, y, 1.9, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.globalAlpha = 1;
+                }
+            }
+
+            // ─── Плёнка: сырые кадры API → ноутбук ──────────────────────
+
+            const FILM_Y = 316;
+            const FILM_PTS = sampleCubic([PORT_L + 4, FILM_Y], [236, FILM_Y], [280, 346], [358, 336], 40);
+            const FILM = measure(FILM_PTS);
+            const FILM_EDGES = [offset(FILM_PTS, -12), offset(FILM_PTS, 12)];
+            const FILM_HOLES = [offset(FILM_PTS, -8.5), offset(FILM_PTS, 8.5)];
+
+            const FRAME_GAP = 30, FILM_SPEED = 40;
+
+            function polyline(pts, dy = 0) {
+                ctx.beginPath();
+                ctx.moveTo(pts[0][0], pts[0][1] + dy);
+                for (const p of pts) ctx.lineTo(p[0], p[1] + dy);
+            }
+
+            function drawFilm(t) {
+                const shift = t * FILM_SPEED;
+
+                ctx.save();
+                ctx.lineCap = 'butt';
+                ctx.lineJoin = 'round';
+
+                // лента: тень и основа
+                ctx.globalAlpha = .35;
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 26;
+                polyline(FILM_PTS, 3);
+                ctx.stroke();
+
+                ctx.globalAlpha = 1;
+                ctx.strokeStyle = C.film;
+                ctx.lineWidth = 24;
+                polyline(FILM_PTS);
+                ctx.stroke();
+
+                // перфорация бежит вместе с кадрами
+                ctx.strokeStyle = '#06080c';
+                ctx.lineWidth = 3;
+                ctx.setLineDash([3.5, 6.5]);
+                ctx.lineDashOffset = -shift;
+                for (const row of FILM_HOLES) {
+                    polyline(row);
+                    ctx.stroke();
+                }
+                ctx.restore();
+
+                // кадры: каждый держит свой цвет, пока едет
+                const lead = Math.floor(shift / FRAME_GAP);
+                const frac = shift / FRAME_GAP - lead;
+
+                for (let j = 0; (j + frac) * FRAME_GAP <= FILM.total; j++) {
+                    const u = (j + frac) * FRAME_GAP / FILM.total;
+                    const [x, y] = pointAt(FILM, u);
+                    const id = j - lead;
+                    const color = PAL[mod(id, PAL.length)];
+
+                    ctx.save();
+                    ctx.translate(x, y);
+                    ctx.rotate(angleAt(FILM, u));
+
+                    fillShape(roundRectPts(-9, -6, 18, 12, 2, 2), color + 'b0', .3, 5000 + mod(id, 50) * 7);
+
+                    // в кадре: горы и луна
+                    ctx.globalAlpha = .6;
+                    ctx.fillStyle = '#0b0e14';
+                    ctx.beginPath();
+                    ctx.moveTo(-9, 6); ctx.lineTo(-9, 2); ctx.lineTo(-3, -1.5); ctx.lineTo(2, 2.5); ctx.lineTo(9, -1.5); ctx.lineTo(9, 6);
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.globalAlpha = .75;
+                    ctx.fillStyle = '#ffffff';
+                    ctx.beginPath();
+                    ctx.arc(jit(id) * 4, -2.6, 1.7, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+                }
+
+                // края ленты от руки
+                FILM_EDGES.forEach((edge, i) => sketch(edge, { alpha: .22, width: 1.1, amp: .8, seed: 5100 + i * 100, passes: 1 }));
+
+                // выход плёнки из сервера
+                fillShape(roundRectPts(PORT_L - 2, FILM_Y - 15, 9, 30, 3, 2), '#2a3242', .4, 5310);
+                sketch(roundRectPts(PORT_L - 2, FILM_Y - 15, 9, 30, 3, 2), { alpha: .35, width: 1, seed: 5320, passes: 1 });
+            }
+
+            // ─── Карточки аниме: рисование ──────────────────────────────
+
+            const cardColor = (n) => PAL[mod(n * 5, PAL.length)];
+
+            function drawCardShape(n) {
+                const color = cardColor(n);
+                const seed = 6000 + mod(n, 40) * 31;
+                const card = roundRectPts(-15, -21, 30, 42, 4, 3);
+
+                fillShape(card, '#10141c', .4, seed);
+
+                ctx.save();
+                ctx.globalAlpha = baseAlpha;
+
+                // обложка: градиент, горы, луна
+                const g = ctx.createLinearGradient(0, -18, 0, 7);
+                g.addColorStop(0, color);
+                g.addColorStop(1, color + '55');
+                ctx.fillStyle = g;
+                ctx.fillRect(-12, -18, 24, 25);
+
+                ctx.fillStyle = '#0b0e14cc';
+                ctx.beginPath();
+                ctx.moveTo(-12, 7); ctx.lineTo(-12, 0); ctx.lineTo(-5, -6); ctx.lineTo(0, -1); ctx.lineTo(5, -7); ctx.lineTo(12, 1); ctx.lineTo(12, 7);
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.fillStyle = '#ffffffcc';
+                ctx.beginPath();
+                ctx.arc(-5 + hash(n) * 10, -12.5, 2.6, 0, Math.PI * 2);
+                ctx.fill();
+
+                // ▶
+                ctx.fillStyle = '#ffffff';
+                ctx.globalAlpha = .9 * baseAlpha;
+                ctx.beginPath();
+                ctx.moveTo(-3, -6); ctx.lineTo(4.5, -2); ctx.lineTo(-3, 2);
+                ctx.closePath();
+                ctx.fill();
+                ctx.restore();
+
+                // строки названия
+                sketch(sampleLine([-11, 12], [7, 12], 4), { alpha: .5, width: 2.2, amp: .3, seed: seed + 3, passes: 1 });
+                sketch(sampleLine([-11, 17], [2, 17], 3), { alpha: .3, width: 2, amp: .3, seed: seed + 5, passes: 1 });
+
+                sketch(card, { alpha: .55, width: 1.3, amp: .6, seed: seed + 9 });
+            }
+
+            function drawTag(text, x, y, a, color, n) {
+                ctx.save();
+                ctx.font = '600 11px system-ui, -apple-system, "Segoe UI", sans-serif';
+                const w = ctx.measureText(text).width + 14;
+                ctx.restore();
+
+                const prev = baseAlpha;
+                baseAlpha = prev * a;
+                const pill = roundRectPts(x - w / 2, y - 9, w, 18, 9, 4);
+                fillShape(pill, '#0d1119', .4, 7000 + mod(n, 30));
+                sketch(pill, { color, alpha: .6, width: 1.1, amp: .5, seed: 7100 + mod(n, 30), passes: 1 });
+                label(text, x, y + .5, { size: 11, color, alpha: .95 });
+                baseAlpha = prev;
+            }
+
+            function drawCards(cards, t) {
+                for (const { raw, n, u } of cards) {
+                    const color = cardColor(n);
+                    const [x, y] = pointAt(CARD_PATH, u);
+                    const grow = Math.sin(Math.min(raw / .3, 1) * Math.PI / 2);
+                    const shrink = raw > .82 ? 1 - (raw - .82) / .18 : 1;
+                    const s = (.3 + grow * .7) * (.3 + shrink * .7);
+                    const rot = -Math.sin(u * Math.PI) * .22 + Math.sin(t * 2 + n) * .05;
+
+                    baseAlpha = Math.min(raw / .06, 1) * Math.min(shrink * 2.5, 1);
+
+                    // след из искр
+                    for (let k = 1; k <= 4; k++) {
+                        const [tx, ty] = pointAt(CARD_PATH, u - k * .022);
+                        glow(tx, ty, 9 - k, color, .3 * (1 - k / 5));
+                    }
+                    glow(x, y, 34 * s, color, .3);
+
+                    ctx.save();
+                    ctx.translate(x, y);
+                    ctx.rotate(rot);
+                    ctx.scale(s, s);
+                    drawCardShape(n);
+                    ctx.restore();
+
+                    // ярлык: что котик узнал об этой серии
+                    const tagA = Math.min(pulse(raw, .5, .3) * 2, 1);
+                    if (tagA > 0) drawTag(TAGS[mod(n, TAGS.length)], x, y - 34 * s - 8, tagA, color, n);
+
+                    baseAlpha = 1;
+                }
+            }
+
+            // ─── Символы над экраном ────────────────────────────────────
+
+            const GLYPHS = ['01', '{ }', '</>', '★', '▶', 'EP', 'RU', 'JP', '10', '4K', 'ass', '♪'].map((g, i) => ({
+                g,
+                x: 400 + jit(i * 4.3) * 56,
+                dur: 2.6 + hash(i * 2.9) * 1.8,
+                off: hash(i * 6.1),
+                drift: jit(i * 8.7) * 36,
+                color: [C.data, C.data2, C.chalk, PAL[0], PAL[1]][i % 5]
+            }));
+
+            function drawGlyphs(t, typing) {
+                for (const p of GLYPHS) {
+                    const k = (t / p.dur + p.off) % 1;
+                    const x = p.x + p.drift * k + Math.sin(t * 1.3 + p.off * 6) * 3;
+                    const y = 280 - k * 70;
+                    const a = Math.sin(k * Math.PI) * (.16 + typing * .24);
+                    label(p.g, x, y, { size: 10, color: p.color, alpha: a, mono: true });
+                }
+            }
+
+            // ─── Котик ──────────────────────────────────────────────────
+
+            const BODY = (() => {
+                const pts = sampleCubic([350, 362], [336, 318], [344, 264], [372, 238], 14);
+                sampleCubic([372, 238], [386, 225], [414, 225], [428, 238], 8, pts);
+                sampleCubic([428, 238], [458, 266], [466, 320], [452, 362], 14, pts);
+                sampleLine([452, 362], [350, 362], 8, pts);
+                return pts;
+            })();
+
+            /** Ритм печати 0..1: очереди нажатий с паузами «подумать» */
+            const typingAt = (t) => Math.min(Math.max((Math.sin(t * .9) + .35) * 2.2, 0), 1);
+
+            /** Мягкая «конечность» котика: чёрная с меловым ободком */
+            function limb(pts, width, seed) {
+                ctx.save();
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                ctx.strokeStyle = C.chalk;
+                ctx.globalAlpha = .15;
+                ctx.lineWidth = width + 3;
+                ctx.beginPath(); trace(pts, .6, seed); ctx.stroke();
+                ctx.globalAlpha = 1;
+                ctx.strokeStyle = C.cat;
+                ctx.lineWidth = width;
+                ctx.beginPath(); trace(pts, .6, seed); ctx.stroke();
+                ctx.restore();
+            }
+
+            function drawCat(t, typing) {
+                const breath = Math.sin(t * 1.65) * .9;
+
+                // ── хвост: за телом, качается и чуть закручивает кончик
+                const sw = Math.sin(t * 1.4) * 14 + Math.sin(t * .53) * 6;
+                const tail = sampleCubic([446, 344], [500, 352], [548 + sw * .3, 318], [540 + sw, 262 + Math.abs(sw) * .2], 22);
+                sampleCubic(tail[tail.length - 1], [536 + sw, 244], [520 + sw * 1.2, 240], [516 + sw * 1.1, 254], 8, tail);
+                limb(tail, 13, 3100);
+
+                // ── тело: дыхание — лёгкое растяжение вверх
+                ctx.save();
+                ctx.translate(400, 362);
+                ctx.scale(1 + breath * .006, 1 - breath * .008);
+                ctx.translate(-400, -362);
+                sketch(BODY.slice(0, -9), { alpha: .3, width: 2.6, amp: .9, seed: 3200, passes: 1 });
+                fillShape(BODY, C.cat, .7, 3200);
+                ctx.restore();
+
+                // ── голова: склонена к экрану, кивает в такт печати
+                const nod = Math.max(0, Math.sin(t * 11)) * typing * 1.1;
+                const hy = 4 + breath * .6 + nod;
+                const ear = pulse((t % 7.3), 6.6, .25);       // подёргивание уха
+
+                ctx.save();
+                ctx.translate(0, hy);
+
+                const earL = [[364, 202], [368 - ear * 6, 158 + ear * 6], [397, 184]];
+                const earR = [[436, 202], [432, 158], [403, 184]];
+
+                for (const [i, ear3] of [earL, earR].entries()) {
+                    const pts = sampleLine(ear3[0], ear3[1], 6);
+                    sampleLine(ear3[1], ear3[2], 6, pts);
+                    sketch(pts, { alpha: .32, width: 2.2, amp: .7, seed: 3400 + i * 50, passes: 1 });
+                    fillShape([...pts, ear3[0]], C.cat, .6, 3400 + i * 50);
+
+                    // внутренность уха
+                    const inner = [
+                        [ear3[0][0] + (ear3[2][0] - ear3[0][0]) * .25, ear3[0][1] - 6],
+                        [ear3[1][0] + (i ? -2 : 2), ear3[1][1] + 12],
+                        [ear3[2][0] + (i ? 4 : -4), ear3[2][1] - 2]
+                    ];
+                    fillShape(inner, '#1a1216', .5, 3450 + i);
+                }
+
+                const head = sampleEllipse(400, 212, 41, 34, 40);
+                sketch(sampleEllipse(400, 212, 41, 34, 24, Math.PI * 1.02, Math.PI * 1.98),
+                    { alpha: .32, width: 2.4, amp: .8, seed: 3500, passes: 1 });
+                fillShape(head, C.cat, .6, 3500);
+
+                // глаза: смотрят вниз, в экран, и «читают» строки слева направо;
+                // когда над головой пролетает карточка — поднимают взгляд и провожают её
+                const read = (t * .75) % 1;
+                const reading = read < .85 ? -2.4 + (read / .85) * 4.8 : 2.4 - ((read - .85) / .15) * 4.8;
+                const follow = Math.min(Math.max((watchX - 400) / 30, -3), 3);
+                const look = reading + (follow - reading) * catSense;
+                const lookY = 2.2 - catSense * 5;
+                const blink = 1 - pulse(t % 5.2, 5.0, .12) * .92;
+                const squint = .84 + catSense * .16;          // прищур, пока работает
+
+                for (const ex of [385, 415]) {
+                    glow(ex + look * .4, 214, 20, C.eye, .22 + catSense * .4);
+
+                    ctx.save();
+                    ctx.translate(ex, 214);
+                    ctx.scale(1, blink * squint);
+
+                    ctx.fillStyle = C.eye;
+                    ctx.globalAlpha = .85 + catSense * .15;
+                    ctx.beginPath();
+                    ctx.ellipse(0, 0, 8.5, 9.5, 0, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    ctx.globalAlpha = 1;
+                    ctx.fillStyle = '#0a0c05';
+                    ctx.beginPath();
+                    ctx.ellipse(look, lookY, 2.6 + catSense * 1.4, 7, 0, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // в зрачке отражается экран
+                    ctx.fillStyle = C.data;
+                    ctx.globalAlpha = .8;
+                    ctx.fillRect(look - 1.7, lookY + 1.2, 3.4, 1.3);
+
+                    ctx.fillStyle = '#ffffff';
+                    ctx.globalAlpha = .85;
+                    ctx.beginPath();
+                    ctx.arc(look + 3, -3.5, 1.5, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+                }
+
+                // нос
+                ctx.fillStyle = '#4a3238';
+                ctx.beginPath();
+                ctx.moveTo(396.5, 227); ctx.lineTo(403.5, 227); ctx.lineTo(400, 231.5);
+                ctx.closePath();
+                ctx.fill();
+
+                // усы
+                const wh = Math.sin(t * 2.1) * .8;
+                const whiskers = [
+                    [[386, 230], [358, 225 + wh]], [[386, 233], [360, 237 + wh]],
+                    [[414, 230], [442, 225 - wh]], [[414, 233], [440, 237 - wh]]
+                ];
+                whiskers.forEach(([a, b], i) => sketch(sampleLine(a, b, 5), { alpha: .3, width: 1, amp: .45, seed: 3600 + i * 20, passes: 1 }));
+
+                ctx.restore();
+            }
+
+            // ─── Ноутбук и лапки ────────────────────────────────────────
+
+            const LID = (() => {
+                const c = [[344, 282], [456, 282], [462, 352], [338, 352]];
+                const pts = sampleLine(c[0], c[1], 8);
+                sampleLine(c[1], c[2], 6, pts);
+                sampleLine(c[2], c[3], 8, pts);
+                sampleLine(c[3], c[0], 6, pts);
+                return pts;
+            })();
+
+            function drawLaptop(t, typing) {
+                // свет экрана на морде и груди котика
+                const flicker = .85 + hash(boil * 3.3) * .15;
+                glow(400, 262, 92, C.data, .13 * flicker + catSense * .1);
+
+                // крышка — к нам задней стороной
+                fillShape(LID, '#121722', .5, 8000);
+                sketch(LID, { alpha: .5, width: 1.5, amp: .7, seed: 8000 });
+
+                // кромка экрана светится сверху
+                ctx.save();
+                ctx.strokeStyle = C.data;
+                ctx.globalAlpha = .5 + catSense * .4;
+                ctx.lineWidth = 1.6;
+                ctx.lineCap = 'round';
+                ctx.beginPath();
+                ctx.moveTo(349, 281); ctx.lineTo(451, 281);
+                ctx.stroke();
+                ctx.restore();
+
+                // логотип: ▶ в круге, вспыхивает на каждой готовой карточке
+                const lg = .55 + catSense * .45;
+                glow(400, 316, 30 + catSense * 12, C.data, .35 * lg);
+                sketch(sampleEllipse(400, 316, 13, 13, 20), { color: C.data, alpha: .55 * lg + .2, width: 1.4, amp: .5, seed: 8100, passes: 1 });
+                ctx.save();
+                ctx.fillStyle = C.data;
+                ctx.globalAlpha = .6 * lg + .3;
+                ctx.beginPath();
+                ctx.moveTo(396, 309.5); ctx.lineTo(406.5, 316); ctx.lineTo(396, 322.5);
+                ctx.closePath();
+                ctx.fill();
+                ctx.restore();
+
+                // основание
+                const base = roundRectPts(316, 350, 168, 11, 4, 2);
+                fillShape(base, '#1b2130', .4, 8200);
+                sketch(base, { alpha: .45, width: 1.3, amp: .6, seed: 8200 });
+
+                // искорки клавиш из-под крышки, пока котик печатает
+                for (const i of [0, 1, 2]) {
+                    const tap = Math.max(0, Math.sin(t * 11 + i * 2.1)) * typing;
+                    if (tap > .85) glow(372 + i * 28, 351, 10, C.data, .35 * tap);
+                }
+            }
+
+            // ─── Пыль в свете ───────────────────────────────────────────
+
+            const DUST = Array.from({ length: 34 }, (_, i) => ({
+                x: hash(i * 3.1) * W,
+                y: hash(i * 7.3) * H,
+                r: .6 + hash(i * 1.7) * 1.3,
+                v: 3 + hash(i * 9.1) * 7,
+                ph: hash(i * 5.5) * 6.28
+            }));
+
+            function drawDust(t) {
+                ctx.save();
+                ctx.fillStyle = C.chalk;
+                for (const d of DUST) {
+                    const y = ((d.y - t * d.v) % H + H) % H;
+                    const x = d.x + Math.sin(t * .4 + d.ph) * 8;
+                    ctx.globalAlpha = .06 + (Math.sin(t * .9 + d.ph) * .5 + .5) * .12;
+                    ctx.beginPath();
+                    ctx.arc(x, y, d.r, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                ctx.restore();
+            }
+
+            function drawGround() {
+                const g = ctx.createRadialGradient(400, 366, 10, 400, 366, 330);
+                g.addColorStop(0, 'rgba(0,0,0,.45)');
+                g.addColorStop(1, 'rgba(0,0,0,0)');
+                ctx.save();
+                ctx.fillStyle = g;
+                ctx.translate(400, 366);
+                ctx.scale(1, .06);
+                ctx.translate(-400, -366);
+                ctx.beginPath();
+                ctx.arc(400, 366, 330, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+
+                sketch(sampleLine([70, 366], [730, 366], 40), { alpha: .1, width: 1.2, amp: .8, seed: 4000, passes: 1 });
+            }
+
+            // ─── Кадр ───────────────────────────────────────────────────
+
+            let scale = 1, dpr = 1;
+
+            function resize() {
+                const rect = canvas.getBoundingClientRect();
+                dpr = Math.min(window.devicePixelRatio || 1, 3);
+                scale = rect.width / W;
+                canvas.width = Math.round(rect.width * dpr);
+                canvas.height = Math.round(rect.height * dpr);
+                if (!running) frame(performance.now());
+            }
+
+            function frame(now) {
+                const t = motion.matches ? 3.3 : now / 1000;
+                boil = motion.matches ? 0 : Math.floor(t * BOIL_FPS);
+                const typing = typingAt(t);
+                const cards = cardStates(t);
+
+                ctx.setTransform(1, 0, 0, 1, 0, 0);
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.setTransform(dpr * scale, 0, 0, dpr * scale, 0, 0);
+
+                drawDust(t);
+                drawGround();
+
+                // Слои: сервер и телефон → запросы по воздуху и плёнка → котик →
+                // ноутбук → символы → карточки (летят от API к телефону поверх всего)
+                drawRack(t);
+                drawPhone(t);
+                drawAntenna(t);
+                drawRequests(t);
+                drawFilm(t);
+                drawCat(t, typing);
+                drawLaptop(t, typing);
+                drawGlyphs(t, typing);
+                drawCards(cards, t);
+            }
+
+            // ─── Цикл ───────────────────────────────────────────────────
+
+            let running = false;
+
+            function loop(now) {
+                if (!running) return;
+                frame(now);
+                requestAnimationFrame(loop);
+            }
+
+            function start() {
+                if (motion.matches) {
+                    running = false;
+                    frame(performance.now());
+                    return;
+                }
+                if (running) return;
+                running = true;
+                requestAnimationFrame(loop);
+            }
+
+            new ResizeObserver(resize).observe(canvas);
+            motion.addEventListener?.('change', () => { running = false; start(); });
+
+            resize();
+            start();
+        })();
+    </script>
+</body>
+
+</html>

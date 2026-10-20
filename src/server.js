@@ -7,6 +7,14 @@ const { ApiError } = require('./errors');
 const app = express();
 app.disable('x-powered-by');
 
+// ---- Заглушка на / --------------------------------------------------------
+// Стоит до проверки Origin, чтобы страница открывалась и в строгом режиме
+const indexPage = path.join(__dirname, '..', 'public', 'index.html');
+
+app.get('/', (req, res) => {
+  res.sendFile(indexPage);
+});
+
 // ---- Доступ только с разрешённых сайтов (CORS + проверка Origin) ----------
 app.use((req, res, next) => {
   const origin = req.headers.origin;
@@ -58,27 +66,6 @@ for (const file of fs.readdirSync(apiDir)) {
 }
 
 app.use('/v4', v4);
-
-app.get('/', (req, res) => {
-  res.json({
-    name: 'kagami-api',
-    description: 'Self-hosted MyAnimeList API (Jikan v4 compatible) with SQLite cache',
-    endpoints: [
-      '/v4/anime?q=...',
-      '/v4/anime/{id}/full',
-      '/v4/anime/{id}/pictures',
-      '/v4/anime/{id}/characters',
-      '/v4/characters/{id}/full',
-      '/v4/characters/{id}/pictures',
-      '/v4/producers',
-      '/v4/producers/{id}',
-      '/v4/recommendations/anime',
-      '/v4/seasons',
-      '/v4/seasons/now',
-      '/v4/seasons/{year}/{season}',
-    ],
-  });
-});
 
 // ---- 404 + обработчик ошибок в стиле Jikan --------------------------------
 app.use((req, res) => {
