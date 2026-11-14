@@ -53,4 +53,19 @@ assert.ok(full.about.startsWith('White Fox is a Japanese animation studio.'));
 assert.ok(full.about.includes('\n\nFounded by Gaku Iwasa.'));
 assert.strictEqual(full.images.jpg.image_url, 'https://cdn.myanimelist.net/images/company/1000/White_Fox.png');
 
+// Даты основания: день, месяц без дня, только год, мусор
+const { parseEstablished } = require('../src/parsers/producers');
+assert.deepStrictEqual(parseEstablished('Jun 14, 2011'), { date: '2011-06-14T00:00:00+00:00', precision: 'day' });
+assert.deepStrictEqual(parseEstablished('May, 1979'), { date: '1979-05-01T00:00:00+00:00', precision: 'month' });
+assert.deepStrictEqual(parseEstablished('2011'), { date: '2011-01-01T00:00:00+00:00', precision: 'year' });
+assert.deepStrictEqual(parseEstablished('unknown'), { date: null, precision: null });
+assert.deepStrictEqual(parseEstablished(null), { date: null, precision: null });
+
+// Количество тайтлов берётся из вкладки "All (N)"
+const tabsHtml = `<html><body><div id="content"><div class="content-right">
+<div class="navi-seasonal"><ul class="sort-order-list"><li>All</li></ul>
+<ul class="btn-type"><li data-key="all">All (1,000)</li><li data-key="1">TV (292)</li></ul></div>
+</div></div></body></html>`;
+assert.strictEqual(parseProducerFull(tabsHtml).count, 1000);
+
 console.log('producers.parser.test.js: OK');

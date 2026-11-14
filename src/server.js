@@ -3,6 +3,8 @@ const path = require('path');
 const express = require('express');
 const { PORT, ALLOWED_ORIGINS, STRICT_ORIGIN } = require('./config');
 const { ApiError } = require('./errors');
+const { startIndexer } = require('./lib/producerIndexer');
+const { startFlushing } = require('./lib/producerHits');
 
 const app = express();
 app.disable('x-powered-by');
@@ -93,6 +95,8 @@ app.use((err, req, res, _next) => {
 if (require.main === module) {
   app.listen(PORT, () => {
     console.log(`Kagami API listening on http://localhost:${PORT}`);
+    startFlushing();
+    startIndexer();
   });
 }
 
