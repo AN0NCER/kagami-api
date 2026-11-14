@@ -41,6 +41,7 @@ module.exports = {
   INDEX_SEASON_TTL_MS: Number.parseInt(process.env.INDEX_SEASON_TTL_MS, 10) || 2 * 24 * 60 * 60 * 1000,
   INDEX_COLD_TTL_MS: Number.parseInt(process.env.INDEX_COLD_TTL_MS, 10) || 7 * 24 * 60 * 60 * 1000,
   INDEX_MAX_FAILS: Number.parseInt(process.env.INDEX_MAX_FAILS, 10) || 3, // подряд ошибок до остановки обхода
+  INDEX_LOG_EVERY: Number.parseInt(process.env.INDEX_LOG_EVERY, 10) || 10, // как часто писать прогресс обхода (в студиях)
 
   // Востребованность студии: запросы затухают с таким периодом полураспада
   HITS_HALF_LIFE_DAYS: Number.parseFloat(process.env.HITS_HALF_LIFE_DAYS) || 7,

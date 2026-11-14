@@ -10,7 +10,7 @@ const {
 } = require('../lib/producerIndex');
 const { recordHit } = require('../lib/producerHits');
 
-const CATALOG_PARAMS = ['order_by', 'sort', 'founded_from', 'founded_to', 'adult', 'sfw'];
+const CATALOG_PARAMS = ['order_by', 'sort', 'founded_from', 'founded_to', 'adult', 'sfw', 'role'];
 
 function parseId(value) {
   const id = Number.parseInt(value, 10);
@@ -50,6 +50,7 @@ function parseCatalogQuery(query) {
     founded_from: year(query.founded_from, 'founded_from'),
     founded_to: year(query.founded_to, 'founded_to'),
     adult: oneOf(query.adult, ['only', 'exclude'], 'adult'),
+    role: oneOf(query.role, ['studio', 'all'], 'role'),
     sfw: isTruthy(query.sfw),
   };
 }
@@ -60,9 +61,9 @@ function parseCatalogQuery(query) {
  */
 module.exports = function register(v4) {
   // Список студий/продюсеров (q, page, limit).
-  // С параметрами order_by, sort, founded_from, founded_to, adult, sfw — каталог по индексу студий
-  // (в него входят студии от INDEX_MIN_TITLES тайтлов); без них — полный список MAL, где у студий
-  // из индекса добавлены цифры.
+  // С параметрами order_by, sort, founded_from, founded_to, adult, sfw, role — каталог по индексу студий
+  // (в него входят компании от INDEX_MIN_TITLES тайтлов; по умолчанию только студии, role=all — все);
+  // без них — полный список MAL, где у компаний из индекса добавлены цифры.
   v4.get('/producers', async (req, res, next) => {
     try {
       const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 25, 1), 100);

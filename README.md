@@ -39,7 +39,7 @@ Requires Node.js 18+ (with Node 22.5+ the built-in `node:sqlite` is used; older 
 | `GET /v4/anime/{id}/characters` | 7 days |
 | `GET /v4/characters/{id}/full` | 7 days |
 | `GET /v4/characters/{id}/pictures` | 7 days |
-| `GET /v4/producers` (q, page, limit; catalog: order_by, sort, founded_from, founded_to, adult, sfw) | 7 days (list) / studio index |
+| `GET /v4/producers` (q, page, limit; catalog: order_by, sort, founded_from, founded_to, adult, sfw, role) | 7 days (list) / studio index |
 | `GET /v4/producers/{id}` | 7 days |
 | `GET /v4/producers/{id}/full` (sfw) — studio page: stats, genres, years, top titles, 18+ flag | 1 day |
 | `GET /v4/producers/{id}/anime` (role, type, q, order_by, sort, status, sfw, page, limit) — studio titles | 1 day |
@@ -78,7 +78,9 @@ Thresholds are configurable (`ADULT_SHARE_MOSTLY`, `ADULT_SHARE_EXCLUSIVE`). The
 
 ### Studio catalog and index
 
-`GET /v4/producers` with any of `order_by` (`members`, `titles`, `favorites`, `score`, `established`, `name`), `sort`, `founded_from`, `founded_to`, `adult` or `sfw` is served from a local **studio index**: one compact row per studio with at least `INDEX_MIN_TITLES` (10) titles. Without those parameters you get the plain MAL list, with the index numbers added for indexed studios.
+`GET /v4/producers` with any of `order_by` (`members`, `titles`, `favorites`, `score`, `established`, `name`), `sort`, `founded_from`, `founded_to`, `adult`, `sfw` or `role` is served from a local **studio index**: one compact row per studio with at least `INDEX_MIN_TITLES` (10) titles. Without those parameters you get the plain MAL list, with the index numbers added for indexed studios.
+
+The catalog lists studios only (`is_studio: true`, i.e. the company has titles with the `studio` role; 18+ studios, whose titles MAL lists as `producer`, count too). Licensors, broadcasters and other producers are hidden by default; `role=all` adds them after the studios.
 
 The index is filled and kept fresh by a background job that visits studio pages one at a time with a pause (`INDEX_DELAY_MS`), so it stays light on a small server. A studio is refreshed when:
 
@@ -113,6 +115,7 @@ All settings are environment variables:
 | `INDEX_SEASON_TTL_MS` | `172800000` (2 days) | Refresh period of studios in the current season |
 | `INDEX_COLD_TTL_MS` | `604800000` (7 days) | Refresh period of all other studios |
 | `INDEX_MAX_FAILS` | `3` | Consecutive MAL errors after which a refresh pass stops |
+| `INDEX_LOG_EVERY` | `10` | Log progress of a refresh pass every N studios |
 | `HITS_HALF_LIFE_DAYS` | `7` | Half-life of the request counter used for refresh priority |
 
 ## Access control (CORS)

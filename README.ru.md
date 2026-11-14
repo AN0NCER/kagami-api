@@ -39,7 +39,7 @@ npm start          # http://localhost:3000
 | `GET /v4/anime/{id}/characters` | 7 дней |
 | `GET /v4/characters/{id}/full` | 7 дней |
 | `GET /v4/characters/{id}/pictures` | 7 дней |
-| `GET /v4/producers` (q, page, limit; каталог: order_by, sort, founded_from, founded_to, adult, sfw) | 7 дней (список) / индекс студий |
+| `GET /v4/producers` (q, page, limit; каталог: order_by, sort, founded_from, founded_to, adult, sfw, role) | 7 дней (список) / индекс студий |
 | `GET /v4/producers/{id}` | 7 дней |
 | `GET /v4/producers/{id}/full` (sfw) — страница студии: цифры, жанры, годы, лучшие тайтлы, признак 18+ | 1 день |
 | `GET /v4/producers/{id}/anime` (role, type, q, order_by, sort, status, sfw, page, limit) — тайтлы студии | 1 день |
@@ -78,7 +78,9 @@ npm start          # http://localhost:3000
 
 ### Каталог студий и индекс
 
-`GET /v4/producers` с любым из параметров `order_by` (`members`, `titles`, `favorites`, `score`, `established`, `name`), `sort`, `founded_from`, `founded_to`, `adult` или `sfw` отвечает из локального **индекса студий**: одна компактная запись на студию, у которой не меньше `INDEX_MIN_TITLES` (10) тайтлов. Без этих параметров приходит обычный список MAL, в который для студий из индекса добавлены цифры.
+`GET /v4/producers` с любым из параметров `order_by` (`members`, `titles`, `favorites`, `score`, `established`, `name`), `sort`, `founded_from`, `founded_to`, `adult`, `sfw` или `role` отвечает из локального **индекса студий**: одна компактная запись на студию, у которой не меньше `INDEX_MIN_TITLES` (10) тайтлов. Без этих параметров приходит обычный список MAL, в который для студий из индекса добавлены цифры.
+
+В каталоге только студии (`is_studio: true`: у компании есть тайтлы с ролью `studio`; студии 18+, у которых MAL указывает роль `producer`, тоже считаются). Лицензиары, телеканалы и прочие продюсеры по умолчанию скрыты; `role=all` добавляет их после студий.
 
 Индекс наполняется и обновляется фоновой задачей: она заходит на страницы студий по одной с паузой (`INDEX_DELAY_MS`), поэтому не нагружает небольшой сервер. Студия обновляется, если:
 
@@ -113,6 +115,7 @@ npm start          # http://localhost:3000
 | `INDEX_SEASON_TTL_MS` | `172800000` (2 дня) | Период обновления студий текущего сезона |
 | `INDEX_COLD_TTL_MS` | `604800000` (7 дней) | Период обновления остальных студий |
 | `INDEX_MAX_FAILS` | `3` | Сколько ошибок MAL подряд останавливают проход обновления |
+| `INDEX_LOG_EVERY` | `10` | Как часто (в студиях) писать в лог прогресс прохода |
 | `HITS_HALF_LIFE_DAYS` | `7` | Период полураспада счётчика обращений, по которому выбирается приоритет обновления |
 
 ## Доступ (CORS)

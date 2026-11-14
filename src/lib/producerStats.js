@@ -43,6 +43,15 @@ function baseTitles(titles) {
   return { basis: 'all', list: titles };
 }
 
+/**
+ * Студия ли это, а не только лицензиар/продюсер/телеканал: есть тайтлы с ролью studio. У студий 18+
+ * на MAL все тайтлы часто с ролью producer, поэтому для них достаточно любых тайтлов, кроме licensor.
+ */
+function isStudioCompany(titles, isAdultStudio) {
+  if (titles.some((t) => t.role === 'studio')) return true;
+  return isAdultStudio && titles.some((t) => t.role !== 'licensor');
+}
+
 const TYPE_KEYS = ['tv', 'movie', 'ova', 'ona', 'special', 'other'];
 
 /** Формат тайтла для фильтров и счётчиков; Music, CM, PV, TV Special и неизвестный тип — other. */
@@ -163,7 +172,10 @@ function buildSummary(allTitles, opts = {}) {
     bestRated.push(...rest.slice(0, BEST_RATED - bestRated.length));
   }
 
+  const adult = computeAdult(allTitles, { now });
+
   return {
+    is_studio: isStudioCompany(allTitles, adult.is_adult_studio),
     stats: {
       basis,
       titles_all: titles.length,
@@ -183,7 +195,7 @@ function buildSummary(allTitles, opts = {}) {
     decades: decadeCounts(base),
     top_titles: topPool.slice().sort(byMembers).slice(0, TOP_TITLES).map(toCard),
     best_rated: bestRated.map(toCard),
-    adult: computeAdult(allTitles, { now }),
+    adult,
   };
 }
 
@@ -215,6 +227,7 @@ module.exports = {
   isAdultTitle,
   toCard,
   baseTitles,
+  isStudioCompany,
   isUpcoming,
   computeAdult,
   buildSummary,

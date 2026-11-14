@@ -60,6 +60,10 @@ function planQueue({ list, state, hits, seasonIds, now, cfg }) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+function formatEta(sec) {
+  return sec >= 90 ? `${Math.round(sec / 60)} min` : `${sec} s`;
+}
+
 let running = false;
 let listCheckedAt = 0;
 let timer = null;
@@ -122,7 +126,9 @@ async function runCycle({ now = Date.now(), log = console.log } = {}) {
     if (queue.length) log(`[indexer] queue: ${queue.length} (first: ${queue.slice(0, 3).map((q) => `${q.id}/${q.reason}`).join(', ')})`);
 
     let fails = 0;
-    for (const item of queue) {
+    const startedAt = Date.now();
+    for (let i = 0; i < queue.length; i++) {
+      const item = queue[i];
       try {
         const { cache } = await getProducerSnapshot(item.id, { force: true });
         if (cache === 'STALE') throw new Error('MAL unavailable, kept old copy');
@@ -136,6 +142,11 @@ async function runCycle({ now = Date.now(), log = console.log } = {}) {
           result.stopped = true;
           break;
         }
+      }
+      const done = i + 1;
+      if (done < queue.length && done % config.INDEX_LOG_EVERY === 0) {
+        const left = Math.round(((Date.now() - startedAt) / done) * (queue.length - done) / 1000);
+        log(`[indexer] ${done}/${queue.length} (${Math.round((done / queue.length) * 100)}%), failed ${result.failed}, ~${formatEta(left)} left`);
       }
       if (config.INDEX_DELAY_MS) await sleep(config.INDEX_DELAY_MS);
     }
