@@ -30,13 +30,25 @@ db.exec(`
   )
 `);
 
+// is_studio: у компании есть собственные тайтлы (не только лицензиар/продюсер). Для строк, записанных
+// до появления колонки, значение считается по сохранённым цифрам.
+if (!db.prepare('PRAGMA table_info(producers_index)').all().some((c) => c.name === 'is_studio')) {
+  db.exec('ALTER TABLE producers_index ADD COLUMN is_studio INTEGER NOT NULL DEFAULT 1');
+  const setStudio = db.prepare('UPDATE producers_index SET is_studio = ? WHERE id = ?');
+  for (const r of db.prepare('SELECT id, titles_studio, is_adult, data FROM producers_index').all()) {
+    const { stats } = JSON.parse(r.data);
+    setStudio.run(r.titles_studio > 0 || (r.is_adult && stats.titles_producer > 0) ? 1 : 0, r.id);
+  }
+}
+
 const upsertStmt = db.prepare(`
   INSERT INTO producers_index (
     id, name, search, established, established_year, established_precision, favorites, list_count,
     titles_studio, score_avg, members_total, titles_studio_sfw, score_avg_sfw, members_total_sfw,
-    year_first, year_last, adult_level, is_adult, hentai_share, data, fetched_at
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    year_first, year_last, adult_level, is_adult, hentai_share, data, fetched_at, is_studio
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   ON CONFLICT(id) DO UPDATE SET
+    is_studio = excluded.is_studio,
     name = excluded.name, search = excluded.search, established = excluded.established,
     established_year = excluded.established_year, established_precision = excluded.established_precision,
     favorites = excluded.favorites, list_count = excluded.list_count,
@@ -96,7 +108,8 @@ function upsertFromSnapshot(snap, now = Date.now()) {
     full.adult.is_adult_studio ? 1 : 0,
     full.adult.hentai_share,
     JSON.stringify(data),
-    now
+    now,
+    full.is_studio ? 1 : 0
   );
   return true;
 }
@@ -129,8 +142,9 @@ const ORDER_KEYS = Object.keys(ORDER_COLUMNS);
 
 /**
  * Каталог по индексу.
- * opts: q, order_by, sort (asc|desc), founded_from, founded_to, adult ('only'|'exclude'), sfw, limit, offset.
+ * opts: q, order_by, sort (asc|desc), founded_from, founded_to, adult ('only'|'exclude'), sfw, role, limit, offset.
  * sfw скрывает студии 18+ и считает цифры без тайтлов 18+; adult='only' имеет приоритет над sfw.
+ * По умолчанию в каталоге только студии; role='all' добавляет лицензиаров и продюсеров — после студий.
  */
 function queryCatalog(opts) {
   const where = [];
@@ -148,6 +162,8 @@ function queryCatalog(opts) {
     where.push('established_year <= ?');
     args.push(opts.founded_to);
   }
+  const allRoles = opts.role === 'all';
+  if (!allRoles) where.push('is_studio = 1');
   const hideAdult = opts.adult === 'exclude' || (opts.sfw && opts.adult !== 'only');
   if (opts.adult === 'only') where.push('is_adult = 1');
   else if (hideAdult) where.push('is_adult = 0');
@@ -161,7 +177,7 @@ function queryCatalog(opts) {
 
   const total = db.prepare(`SELECT COUNT(*) AS n FROM producers_index ${clause}`).get(...args).n;
   const rows = db
-    .prepare(`SELECT * FROM producers_index ${clause} ORDER BY ${nulls}${orderCol} ${dir}, id ASC LIMIT ? OFFSET ?`)
+    .prepare(`SELECT * FROM producers_index ${clause} ORDER BY ${allRoles ? 'is_studio DESC, ' : ''}${nulls}${orderCol} ${dir}, id ASC LIMIT ? OFFSET ?`)
     .all(...args, opts.limit, opts.offset);
 
   return { total, items: rows.map((r) => catalogItem(r, sfwNumbers)) };
@@ -204,6 +220,7 @@ function catalogItem(row, sfw) {
     },
     top_titles: sfw ? d.top_titles_sfw : d.top_titles,
     adult: { level: row.adult_level, is_adult_studio: !!row.is_adult, hentai_share: row.hentai_share },
+    is_studio: !!row.is_studio,
     indexed: true,
   };
 }
@@ -211,7 +228,7 @@ function catalogItem(row, sfw) {
 /** Студии для сравнения жанров: только 18+ или только обычные. */
 function similarCandidates(isAdult) {
   return db
-    .prepare('SELECT id, name, titles_studio, members_total, data FROM producers_index WHERE is_adult = ?')
+    .prepare('SELECT id, name, titles_studio, members_total, data FROM producers_index WHERE is_adult = ? AND is_studio = 1')
     .all(isAdult ? 1 : 0)
     .map((r) => {
       const d = JSON.parse(r.data);

@@ -10,16 +10,22 @@ const variant = (name, fromId, fromSlug, toId, toSlug, fromName, toName) => fixt
   .replace(`producer/${fromId}/${fromSlug}`, `producer/${toId}/${toSlug}`)
   .split(fromName).join(toName);
 
+// Компания только с ролью licensor: копия Pierrot, где у всех тайтлов другая роль
+const licensorOnly = variant('producer_1.html', 1, 'Studio_Pierrot', 4, 'Licensor_Co', 'Studio Pierrot', 'Licensor Co')
+  .replace(/(<div class="category">\s*)Studio(\s*<\/div>)/g, '$1Licensor$2')
+  .replace(/js-anime-category-studio/g, 'js-anime-category-licensor');
+
 const pages = {
   '/anime/producer/1': fixture('producer_1.html'),
   '/anime/producer/2': variant('producer_1.html', 1, 'Studio_Pierrot', 2, 'Studio_Two', 'Studio Pierrot', 'Studio Two'),
+  '/anime/producer/4': licensorOnly,
   '/anime/producer/45': fixture('producer_45.html'),
   '/anime/producer/3': variant('producer_45.html', 45, 'Pink_Pineapple', 3, 'Adult_Two', 'Pink Pineapple', 'Adult Two'),
   '/anime/season': '<html><head><title>Fall 2026 - Anime</title></head><body></body></html>',
 };
 
 // Общий список студий MAL; счётчики можно менять в ходе теста
-const counts = { 1: 335, 2: 335, 3: 297, 45: 297, 7: 5, 999: 50 };
+const counts = { 1: 335, 2: 335, 3: 297, 4: 335, 45: 297, 7: 5, 999: 50 };
 const listHtml = () => `<html><body>${Object.entries(counts)
   .map(([id, n]) => `<a class="genre-name-link" href="/anime/producer/${id}/S${id}">Studio ${id} (${n})</a>`)
   .join('')}</body></html>`;
@@ -61,12 +67,12 @@ const DAY = 24 * 60 * 60 * 1000;
 
   const logs = [];
   let res = await runCycle({ log: (m) => logs.push(m) });
-  assert.strictEqual(res.queued, 5, '1, 2, 3, 45 и 999; студия 7 меньше порога');
+  assert.strictEqual(res.queued, 6, '1, 2, 3, 4, 45 и 999; студия 7 меньше порога');
   assert.deepStrictEqual(res.queue.map((q) => q.id).slice(0, 2), [45, 1], 'по востребованности');
   assert.ok(res.queue.every((q) => q.reason === 'new'));
-  assert.strictEqual(res.updated, 4);
+  assert.strictEqual(res.updated, 5);
   assert.strictEqual(res.failed, 1, '999 нет на MAL');
-  assert.strictEqual(indexedCount(), 4);
+  assert.strictEqual(indexedCount(), 5);
   assert.ok(logs.some((l) => l.includes('first: 45/new, 1/new')));
 
   // повторный проход: все свежие, остаётся только неудавшаяся студия
@@ -77,7 +83,7 @@ const DAY = 24 * 60 * 60 * 1000;
   let r = await get('/producers?order_by=members');
   assert.strictEqual(r.status, 200);
   assert.strictEqual(r.body.pagination.items.total, 4);
-  assert.strictEqual(r.body.meta.indexed, 4);
+  assert.strictEqual(r.body.meta.indexed, 5);
   assert.deepStrictEqual(ids(r).slice(0, 2).sort(), [1, 2], 'мейнстрим по участникам выше хентай-студий');
   const first = r.body.data[0];
   assert.ok(first.stats.members_total > 0 && first.titles.length >= 2 && first.indexed === true);
@@ -88,6 +94,20 @@ const DAY = 24 * 60 * 60 * 1000;
     (a, b) => ({ 1: 'Studio Pierrot', 2: 'Studio Two', 3: 'Adult Two', 45: 'Pink Pineapple' }[a])
       .localeCompare({ 1: 'Studio Pierrot', 2: 'Studio Two', 3: 'Adult Two', 45: 'Pink Pineapple' }[b])
   ));
+
+  // компания без собственных тайтлов (только licensor) в каталоге по умолчанию скрыта
+  assert.ok(!ids(r).includes(4));
+  assert.ok(r.body.data.every((s) => s.is_studio === true));
+  r = await get('/producers?order_by=members&role=studio');
+  assert.strictEqual(r.body.pagination.items.total, 4);
+  // role=all возвращает её после студий, даже если по участникам она впереди
+  r = await get('/producers?order_by=members&role=all');
+  assert.strictEqual(r.body.pagination.items.total, 5);
+  assert.strictEqual(ids(r)[4], 4);
+  assert.strictEqual(r.body.data[4].is_studio, false);
+  assert.ok(r.body.data[4].stats.members_total > 0);
+  assert.strictEqual((await get('/producers?role=nope')).status, 400);
+  r = await get('/producers?order_by=members');
 
   // 18+: sfw скрывает студии 18+, adult=only показывает только их и главнее sfw
   r = await get('/producers?order_by=members&sfw=true');
@@ -122,9 +142,11 @@ const DAY = 24 * 60 * 60 * 1000;
 
   // обычный список MAL: у студий из индекса есть цифры
   r = await get('/producers');
-  assert.strictEqual(r.body.pagination.items.total, 6);
+  assert.strictEqual(r.body.pagination.items.total, 7);
   const byId = Object.fromEntries(r.body.data.map((s) => [s.mal_id, s]));
   assert.strictEqual(byId[1].indexed, true);
+  assert.strictEqual(byId[1].is_studio, true);
+  assert.strictEqual(byId[4].is_studio, false);
   assert.strictEqual(byId[1].count, 335);
   assert.ok(byId[1].stats && byId[1].adult);
   assert.strictEqual(byId[7].indexed, false);
@@ -136,6 +158,7 @@ const DAY = 24 * 60 * 60 * 1000;
   assert.deepStrictEqual(ids(r), [2], 'у обычной студии — только обычные, без себя');
   assert.strictEqual(r.body.data[0].similarity, 1);
   assert.ok(r.body.data[0].genres.length > 0);
+  assert.ok(!ids(await get('/producers/4/similar')).includes(4));
   r = await get('/producers/45/similar');
   assert.deepStrictEqual(ids(r), [3], 'у студии 18+ — только 18+');
   assert.strictEqual((await get('/producers/1/similar?limit=0')).body.data.length, 1);
@@ -150,7 +173,7 @@ const DAY = 24 * 60 * 60 * 1000;
   res = await runCycle({ now: Date.now() + 8 * DAY });
   assert.strictEqual(res.queue[0].id, 3);
   assert.strictEqual(res.queue[0].reason, 'scheduled');
-  assert.strictEqual(res.updated, 4);
+  assert.strictEqual(res.updated, 5);
 
   // изменилось число тайтлов в общем списке -> changed
   counts[2] = 336;

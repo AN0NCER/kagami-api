@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { parseProducerPage } = require('../src/parsers/producerPage');
 const {
-  buildSummary, computeAdult, isUpcoming, baseTitles, genreVector, cosine,
+  buildSummary, computeAdult, isUpcoming, baseTitles, isStudioCompany, genreVector, cosine,
 } = require('../src/lib/producerStats');
 
 const NOW = new Date(Date.UTC(2026, 10, 14)); // 14.11.2026
@@ -132,6 +132,13 @@ const lic = buildSummary([mk({ role: 'licensor' }), mk({ role: 'licensor' })], {
 assert.strictEqual(lic.stats.basis, 'all');
 assert.strictEqual(lic.stats.titles_licensor, 2);
 assert.strictEqual(baseTitles([mk({ role: 'licensor' })]).list.length, 1);
+
+// студия или только лицензиар/продюсер: у 18+ студий роль producer допустима
+assert.strictEqual(lic.is_studio, false);
+assert.strictEqual(agg.is_studio, true);
+assert.strictEqual(buildSummary([mk({ role: 'producer' })], { now: NOW }).is_studio, false);
+assert.strictEqual(isStudioCompany([mk({ role: 'producer' })], true), true);
+assert.strictEqual(isStudioCompany([mk({ role: 'licensor' })], true), false);
 
 // лучшие по оценке: тайтлы с малым числом участников идут после популярных
 const best = buildSummary([
