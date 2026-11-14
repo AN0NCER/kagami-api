@@ -54,8 +54,11 @@ function parseProducersList(html) {
  * в формат Jikan v4 /producers/:id.
  */
 function parseProducerFull(html) {
-  const $ = cheerio.load(html);
+  return parseProducerHeader(cheerio.load(html));
+}
 
+/** Шапка студии из уже загруженного cheerio-документа (чтобы не парсить большую страницу дважды). */
+function parseProducerHeader($) {
   const url = $('meta[property="og:url"]').attr('content') || null;
   const name = clean($('h1.title-name, .title-name').first().text()) || null;
 
@@ -95,9 +98,11 @@ function parseProducerFull(html) {
       .trim() || null;
   }
 
-  // Количество тайтлов: первый пункт навигации "All Anime (812)"
+  // Количество тайтлов: вкладка "All (812)"; у старой вёрстки — первый пункт "All Anime (812)"
   let count = 0;
-  const navText = clean($('div.navi-seasonal li').first().text());
+  const navText = clean(
+    $('ul.btn-type li[data-key="all"]').first().text() || $('div.navi-seasonal li').first().text()
+  );
   const cm = navText.match(/\(([\d,]+)\)/);
   if (cm) count = Number.parseInt(cm[1].replace(/,/g, ''), 10);
 
@@ -123,19 +128,30 @@ function labelValue($, label) {
   return clean(parent.text()) || null;
 }
 
+/**
+ * "Oct 1, 1972" | "May, 1979" | "2011" -> { date: ISO, precision: 'day' | 'month' | 'year' }
+ * Недостающие месяц и день в date заполняются единицей.
+ */
+function parseEstablished(str) {
+  if (!str) return { date: null, precision: null };
+  const iso = (y, m, d) => `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}T00:00:00+00:00`;
+
+  let m = str.match(/^([A-Za-z]{3})[a-z]*\s+(\d{1,2}),?\s*(\d{4})$/);
+  if (m && MONTHS[m[1].toLowerCase()]) {
+    return { date: iso(m[3], MONTHS[m[1].toLowerCase()], +m[2]), precision: 'day' };
+  }
+  m = str.match(/^([A-Za-z]{3})[a-z]*,?\s*(\d{4})$/);
+  if (m && MONTHS[m[1].toLowerCase()]) {
+    return { date: iso(m[2], MONTHS[m[1].toLowerCase()], 1), precision: 'month' };
+  }
+  m = str.match(/^(\d{4})$/);
+  if (m) return { date: iso(m[1], 1, 1), precision: 'year' };
+  return { date: null, precision: null };
+}
+
 /** "Oct 1, 1972" -> ISO */
 function parseReadableDate(str) {
-  if (!str) return null;
-  const m = str.match(/^([A-Za-z]{3})[a-z]*\s+(\d{1,2}),?\s*(\d{4})$/);
-  if (m) {
-    const month = MONTHS[m[1].toLowerCase()];
-    if (month) {
-      return `${m[3]}-${String(month).padStart(2, '0')}-${String(+m[2]).padStart(2, '0')}T00:00:00+00:00`;
-    }
-  }
-  const y = str.match(/^(\d{4})$/);
-  if (y) return `${y[1]}-01-01T00:00:00+00:00`;
-  return null;
+  return parseEstablished(str).date;
 }
 
 function clean(s) {
@@ -143,4 +159,13 @@ function clean(s) {
   return s.replace(/ /g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-module.exports = { parseProducersList, parseProducerFull };
+module.exports = {
+  parseProducersList,
+  parseProducerFull,
+  parseProducerHeader,
+  parseEstablished,
+  parseReadableDate,
+  labelValue,
+  clean,
+  producerId,
+};

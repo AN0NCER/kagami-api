@@ -2,6 +2,7 @@ const { cached } = require('../cache');
 const { fetchPage } = require('../mal/client');
 const { parseSeasonPage, parseSeasonArchive } = require('../parsers/seasons');
 const { ApiError } = require('../errors');
+const { getSeasonNow } = require('../lib/seasonNow');
 
 const SEASONS = ['winter', 'spring', 'summer', 'fall'];
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -29,11 +30,7 @@ module.exports = function register(v4) {
   // Текущий сезон — TTL 6 часов
   v4.get('/seasons/now', async (req, res, next) => {
     try {
-      const { data, cache } = await cached(
-        'seasons/now',
-        async () => parseSeasonPage(await fetchPage('/anime/season')),
-        6 * 60 * 60 * 1000
-      );
+      const { data, cache } = await getSeasonNow();
       res.set('X-Cache', cache);
       res.json(buildResponse(data, req.query));
     } catch (err) {
